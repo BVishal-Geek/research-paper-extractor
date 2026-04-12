@@ -17,7 +17,7 @@ Usage:
 import logging
 import os
 from pathlib import Path
-from configs.config import LOG_DIR
+from rpextractor.utils.config import LOG_DIR
 
 def get_logger(name: str, level= logging.DEBUG) -> logging.Logger:
     """Get a configured logger for the given module.

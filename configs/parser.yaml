@@ -1,0 +1,22 @@
+# Sections extracted from <body> using title matching
+body_sections:
+  INTRODUCTION: ["introduction", "intro", "background"]
+  METHODS: ["materials and methods", "methods", "materials & methods", "methodology"]
+  RESULTS: ["results", "findings"]
+  DISCUSSION: ["discussion"]
+  CONCLUSION: ["conclusions", "conclusion", "concluding remarks"]
+
+# Sections with special extraction logic
+special_sections:
+  DATA_AVAILABILITY: ["data availability", "data access", "data sharing", "availability of data", "data and code availability"]
+  ASSOCIATED_DATA: ["supplementary", "associated data", "supplementary material", "supplementary information"]
+
+# Domain relevance terms
+relevance_terms:
+  - cancer
+  - carcinoma
+  - tumor
+  - tumour
+  - neoplasm
+  - malignancy
+  - oncology

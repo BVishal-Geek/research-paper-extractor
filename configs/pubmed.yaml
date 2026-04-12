@@ -1,6 +1,8 @@
-queries: '''("TCGA" OR "GEO" OR "SEER" OR "publicly available data" OR "open access data" OR "public dataset" OR "data repository") AND (cancer OR neoplasm OR carcinoma OR tumor OR malignancy) AND (treatment OR therapy OR drug OR chemotherapy OR radiotherapy OR immunotherapy OR "clinical trial" OR intervention OR "targeted therapy" OR pharmacotherapy)'''
+queries: '(TCGA OR GEO OR SEER OR publicly available data OR open access data OR public dataset OR data repository) AND (cancer OR neoplasm OR carcinoma OR tumor OR malignancy) AND (treatment OR therapy OR drug OR chemotherapy OR radiotherapy OR immunotherapy OR clinical trial OR intervention OR targeted therapy OR pharmacotherapy)'
 max_results: 100
-database: "pmc"
-retmode: "xml"
-datetype: "pdat"
-mindate: "2020/01/01"
+database: pmc
+retmode: xml
+datetype: pdat
+mindate: '2020/01/01'
+sort: pub_date
+rettype: full
