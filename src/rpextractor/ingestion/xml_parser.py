@@ -1,6 +1,8 @@
+import re
 from xml.etree import ElementTree as ET
 from rpextractor.utils.logger import get_logger
 from rpextractor.utils.config import load_yaml
+from rpextractor.utils.text_cleaner import clean_text
 
 logger = get_logger(__name__)
 
@@ -14,7 +16,29 @@ class XMLParser:
         logger.info(f"XMLParser initialized with body_sections: {self.body_sections} and special_sections: {self.special_sections}")
 
     def _extract_text(self, element) -> str:
-        """Recursively extract text from an XML element."""
+        """Recursively extract all text from an XML element and its children.
+
+        XML elements have three types of text:
+            - element.text: text right after the opening tag, before any child
+            - child text: text inside nested child tags (extracted recursively)
+            - child.tail: text after a child's closing tag
+
+        Example:
+            <p>Hello <italic>world</italic> goodbye</p>
+
+            element.text = "Hello"
+            child text   = "world"     (from <italic>)
+            child.tail   = "goodbye"   (after </italic>)
+
+            Result: "Hello world goodbye"
+
+        Args:
+            element: An XML element to extract text from.
+
+        Returns:
+            All text content joined as a single string.
+            Returns empty string if element is None.
+        """
         if element is None: 
             return ""
         
@@ -31,8 +55,8 @@ class XMLParser:
             
             if child.tail:
                 text_content.append(child.tail.strip())
-                
-        return " ".join(text_content).strip()
+
+        return clean_text(" ".join(text_content).strip())
 
     def extract_metadata(self, root) -> dict:
         """Extract paper metadata from the front section."""
