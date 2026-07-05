@@ -1,105 +1,88 @@
 """Pydantic schema for paper-level reportability extraction.
 
-Each `_E` field is a binary verdict: 1 = the rubric is satisfied, 0 = it is not.
-Each `_reason` field is a short paraphrased justification (1-2 sentences).
-Each `_evidence` field is an optional verbatim quote from the paper that
-supports the verdict. Evidence makes hallucinations easy to spot during
-evaluation and is OK to leave empty when the verdict is 0.
-
-The rubric strings in `Field(description=...)` are surfaced to the LLM via
-`model.model_json_schema()`, so they double as the per-field instructions.
+Mirrors the JSON contract enforced by SYSTEM_PAPER_EVALUATION_PROMPT in
+prompts.py. Each `_E` field is a binary verdict and each `_reason` is either
+a short paraphrased quote from the paper (when verdict=1) or the literal
+string "not found" (when verdict=0). The model_validator enforces that rule
+so LLM violations raise a ValidationError instead of being silently accepted.
 """
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 Verdict = Literal[0, 1]
+NOT_FOUND = "not found"
+
+_FIELDS_WITH_REASONS = (
+    "condition_E",
+    "N_E",
+    "dataset_E",
+    "intervention_E",
+    "pr_endpoint_E",
+    "R_criteria_E",
+)
 
 
 class ExtractionResult(BaseModel):
-    """One row of reportability assessment for a single paper."""
+    """Reportability assessment for a single paper."""
 
-    paper_title: str = Field(
-        description="The title of the paper as written by the authors.",
-    )
+    paper_title: str = Field(description="Paper title as written by the authors.")
 
     condition_E: Verdict = Field(
-        description=(
-            "1 if the experimental or responder cohort is clearly defined "
-            "(disease, stage, biomarker status, or other inclusion criteria "
-            "are explicit). 0 otherwise."
-        ),
+        description="1 if the experimental or responder cohort is clearly defined.",
     )
     condition_E_reason: str = Field(
-        description="1-2 sentence justification for the condition_E verdict.",
-    )
-    condition_E_evidence: str = Field(
-        default="",
-        description=(
-            "Verbatim quote from the paper supporting condition_E. "
-            "Empty string if the verdict is 0 or no clean quote exists."
-        ),
+        description="Short paraphrased quote supporting condition_E=1, or 'not found' if 0.",
     )
 
     N_E: Verdict = Field(
-        description=(
-            "1 if the sample size or data volume for the experimental group "
-            "is clearly stated as a number. 0 otherwise."
-        ),
+        description="1 if the sample size or data volume for the experimental group is clearly stated.",
     )
     N_E_reason: str = Field(
-        description="1-2 sentence justification for the N_E verdict.",
+        description="Short paraphrased quote supporting N_E=1, or 'not found' if 0.",
     )
-    N_E_evidence: str = Field(default="", description="Verbatim supporting quote, or empty.")
 
     dataset_E: Verdict = Field(
-        description=(
-            "1 if the experimental group data source is clearly specified AND "
-            "accessible (e.g. GEO accession, TCGA project, dbGaP, a named public "
-            "repository, or a DOI). 0 if the data is private, undisclosed, or "
-            "only vaguely described."
-        ),
+        description="1 if the experimental group data source is clearly specified and accessible (GEO, TCGA, public DBs).",
     )
     dataset_E_reason: str = Field(
-        description="1-2 sentence justification for the dataset_E verdict.",
+        description="Short paraphrased quote supporting dataset_E=1, or 'not found' if 0.",
     )
-    dataset_E_evidence: str = Field(default="", description="Verbatim supporting quote, or empty.")
 
     intervention_E: Verdict = Field(
-        description=(
-            "1 if the experimental treatment, intervention, or biological "
-            "condition applied to the cohort is clearly described (drug name, "
-            "dose, regimen, perturbation, etc.). 0 otherwise."
-        ),
+        description="1 if the experimental treatment, intervention, or biological condition is clearly described.",
     )
     intervention_E_reason: str = Field(
-        description="1-2 sentence justification for the intervention_E verdict.",
+        description="Short paraphrased quote supporting intervention_E=1, or 'not found' if 0.",
     )
-    intervention_E_evidence: str = Field(default="", description="Verbatim supporting quote, or empty.")
 
     pr_endpoint_E: Verdict = Field(
-        description=(
-            "1 if a clear primary outcome or response endpoint is defined for "
-            "the experimental group (e.g. overall survival, progression-free "
-            "survival, objective response rate, a named biomarker change). "
-            "0 otherwise."
-        ),
+        description="1 if a clear primary outcome or response endpoint is defined for the experimental group.",
     )
     pr_endpoint_E_reason: str = Field(
-        description="1-2 sentence justification for the pr_endpoint_E verdict.",
+        description="Short paraphrased quote supporting pr_endpoint_E=1, or 'not found' if 0.",
     )
-    pr_endpoint_E_evidence: str = Field(default="", description="Verbatim supporting quote, or empty.")
 
     R_criteria_E: Verdict = Field(
-        description=(
-            "1 if explicit criteria defining responders in the experimental "
-            "group are stated (e.g. RECIST 1.1, iRECIST, a numeric threshold, "
-            "or a named scoring system). 0 otherwise."
-        ),
+        description="1 if explicit criteria defining responders in the experimental group are stated.",
     )
     R_criteria_E_reason: str = Field(
-        description="1-2 sentence justification for the R_criteria_E verdict.",
+        description="Short paraphrased quote supporting R_criteria_E=1, or 'not found' if 0.",
     )
-    R_criteria_E_evidence: str = Field(default="", description="Verbatim supporting quote, or empty.")
+
+    @model_validator(mode="after")
+    def _enforce_reason_rule(self) -> "ExtractionResult":
+        for field in _FIELDS_WITH_REASONS:
+            verdict = getattr(self, field)
+            reason = getattr(self, f"{field}_reason").strip()
+            if verdict == 0 and reason.lower() != NOT_FOUND:
+                raise ValueError(
+                    f"{field}=0 requires {field}_reason='{NOT_FOUND}', got {reason!r}"
+                )
+            if verdict == 1 and (not reason or reason.lower() == NOT_FOUND):
+                raise ValueError(
+                    f"{field}=1 requires a non-empty supporting reason, got {reason!r}"
+                )
+        return self

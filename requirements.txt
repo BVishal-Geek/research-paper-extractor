@@ -1,0 +1,14 @@
+# Ingestion — PubMed API + config loading
+biopython>=1.87
+python-dotenv>=1.0
+PyYAML>=6.0
+
+# Extraction — schema validation
+pydantic>=2.5,<3
+
+# LLM providers
+ollama>=0.4
+openai>=1.50
+
+# Tests
+pytest>=8.0
