@@ -1,0 +1,15 @@
+provider: ollama  # one of: ollama, openai
+
+ollama:
+  model: qwen2.5:7b-instruct
+  host: http://localhost:11434
+  timeout: 120  # seconds
+  options:
+    temperature: 0.0
+    num_ctx: 16384
+
+openai:
+  model: gpt-4o-mini
+  timeout: 60
+  temperature: 0.0
+  max_cost_usd_per_run: 5.0  # hard ceiling; OpenAIClient aborts if exceeded
