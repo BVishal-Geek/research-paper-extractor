@@ -4,6 +4,9 @@ SYSTEM_PAPER_EVALUATION_PROMPT is the locked instruction prompt — do not edit
 without also updating schema.py, since the JSON contract here is enforced by
 the Pydantic validator there.
 """
+# pylint: disable=line-too-long
+# The system prompt below is a verbatim string; reformatting would change the
+# prompt the LLM sees, which affects extraction behavior.
 
 
 SYSTEM_PAPER_EVALUATION_PROMPT = """
