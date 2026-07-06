@@ -1,0 +1,25 @@
+[tool.pylint.main]
+# Match Black-style width so lint doesn't fight formatting.
+max-line-length = 100
+
+[tool.pylint."messages control"]
+# Deliberate disables — see README of each rule if you're curious.
+disable = [
+    # False positives in CI where deps aren't installed.
+    "import-error",
+
+    # pytest fixtures work by parameter-name shadowing. Not a real bug.
+    "redefined-outer-name",
+
+    # Style disagreements we've made a call on.
+    "logging-fstring-interpolation",   # f-strings are more readable; perf is fine at our volume
+    "too-few-public-methods",          # ABCs, config-y classes, single-purpose orchestrators
+    "duplicate-code",                  # 5-line summary log format duplicated across orchestrators — intentional
+    "unnecessary-ellipsis",            # ABC bodies with `...` are the standard idiom
+
+    # Intentional in orchestration code — catch-all so one bad paper doesn't kill the batch.
+    "broad-exception-caught",
+
+    # Test names are self-documenting; no need for docstrings on every test_* function.
+    "missing-function-docstring",
+]

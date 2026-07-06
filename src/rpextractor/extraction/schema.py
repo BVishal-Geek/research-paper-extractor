@@ -38,35 +38,48 @@ class ExtractionResult(BaseModel):
     )
 
     N_E: Verdict = Field(
-        description="1 if the sample size or data volume for the experimental group is clearly stated.",
+        description=(
+            "1 if the sample size or data volume for the experimental group is clearly stated."
+        ),
     )
     N_E_reason: str = Field(
         description="Short paraphrased quote supporting N_E=1, or 'not found' if 0.",
     )
 
     dataset_E: Verdict = Field(
-        description="1 if the experimental group data source is clearly specified and accessible (GEO, TCGA, public DBs).",
+        description=(
+            "1 if the experimental group data source is clearly specified and "
+            "accessible (GEO, TCGA, public DBs)."
+        ),
     )
     dataset_E_reason: str = Field(
         description="Short paraphrased quote supporting dataset_E=1, or 'not found' if 0.",
     )
 
     intervention_E: Verdict = Field(
-        description="1 if the experimental treatment, intervention, or biological condition is clearly described.",
+        description=(
+            "1 if the experimental treatment, intervention, or biological condition "
+            "is clearly described."
+        ),
     )
     intervention_E_reason: str = Field(
         description="Short paraphrased quote supporting intervention_E=1, or 'not found' if 0.",
     )
 
     pr_endpoint_E: Verdict = Field(
-        description="1 if a clear primary outcome or response endpoint is defined for the experimental group.",
+        description=(
+            "1 if a clear primary outcome or response endpoint is defined "
+            "for the experimental group."
+        ),
     )
     pr_endpoint_E_reason: str = Field(
         description="Short paraphrased quote supporting pr_endpoint_E=1, or 'not found' if 0.",
     )
 
     R_criteria_E: Verdict = Field(
-        description="1 if explicit criteria defining responders in the experimental group are stated.",
+        description=(
+            "1 if explicit criteria defining responders in the experimental group are stated."
+        ),
     )
     R_criteria_E_reason: str = Field(
         description="Short paraphrased quote supporting R_criteria_E=1, or 'not found' if 0.",

@@ -33,6 +33,8 @@ class CostCeilingExceeded(RuntimeError):
 
 
 class OpenAIClient(BaseLLMClient):
+    """OpenAI chat client with JSON-mode output and a per-run cost ceiling."""
+
     def __init__(
         self,
         model: str,

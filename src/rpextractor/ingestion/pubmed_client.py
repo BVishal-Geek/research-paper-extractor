@@ -1,16 +1,19 @@
+"""PubMed Entrez client — search for paper IDs and fetch their XML content."""
+
 import os
+
 from Bio import Entrez
 from dotenv import load_dotenv
-from rpextractor.utils.logger import get_logger
+
 from rpextractor.utils.config import load_yaml
+from rpextractor.utils.logger import get_logger
 
 load_dotenv()
-# file_name = os.path.basename(__file__)
 logger = get_logger(__name__)
 
-class PubMedClient:
+class PubMedClient:  # pylint: disable=too-many-instance-attributes
     """Client for interacting with PubMed Entrez API.
-    
+
     Handles searching for papers and fetching XML content.
     Credentials loaded from .env, config from pubmed.yaml.
     """
@@ -52,13 +55,16 @@ class PubMedClient:
             handle.close()
             pmids = record.get("IdList")
             total_count = record.get("Count")
-            logger.info(f"Search completed. Found {total_count} results, returning {len(pmids)} PMIDs.")
+            logger.info(
+                f"Search completed. Found {total_count} results, "
+                f"returning {len(pmids)} PMIDs."
+            )
             return pmids
-        
+
         except Exception as e:
             logger.error(f"Error during PubMed search: {e}")
             return []
-    
+
     def fetch(self, pmid: str) -> str:
         """ Fetch the XML data for the given list"""
         if not pmid:
@@ -79,6 +85,3 @@ class PubMedClient:
         except Exception as e:
             logger.error(f"Error during PubMed fetch: {e}")
             return ""
-        
-
-    

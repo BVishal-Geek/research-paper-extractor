@@ -9,7 +9,7 @@ Mirrors the Downloader class shape (run() + _process_single() + summary).
 
 import json
 import os
-from datetime import date 
+from datetime import date
 from pathlib import Path
 
 from rpextractor.ingestion.xml_parser import XMLParser
@@ -61,7 +61,11 @@ class Preprocessor:
 
             if parsed is None:
                 logger.warning(f"{fallback_pmcid} parser returned None")
-                return {"pmcid": fallback_pmcid, "status": "failed", "message": "Parse returned None"}
+                return {
+                    "pmcid": fallback_pmcid,
+                    "status": "failed",
+                    "message": "Parse returned None",
+                }
 
             # Prefer the pmcid the parser extracted; fall back to filename.
             pmcid = parsed.get("metadata", {}).get("pmcid") or fallback_pmcid

@@ -1,12 +1,13 @@
+"""Threaded downloader that fetches PubMed XMLs and persists them to disk."""
 
 import os
 import time
-from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from rpextractor.ingestion.pubmed_client import PubMedClient
-from rpextractor.utils.logger import get_logger
-from rpextractor.utils.config import BASE_DIR
 from datetime import datetime
+
+from rpextractor.ingestion.pubmed_client import PubMedClient
+from rpextractor.utils.config import BASE_DIR
+from rpextractor.utils.logger import get_logger
 
 file_name = os.path.basename(__file__)
 logger = get_logger(file_name)
@@ -23,12 +24,15 @@ class Downloader:
         self.client = PubMedClient()
         self.max_workers = max_workers
         # seconds to sleep between requests to avoid rate limits
-        self.sleep_time = sleep_time 
+        self.sleep_time = sleep_time
         # Resolve output directory relative to project root
-        self.output_dir = BASE_DIR / "data" / "raw" / f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        self.output_dir = BASE_DIR / "data" / "raw" / timestamp
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"Downloader initialized. Output: {self.output_dir}, Workers: {self.max_workers}")
+        logger.info(
+            f"Downloader initialized. Output: {self.output_dir}, Workers: {self.max_workers}"
+        )
 
     def _already_downloaded(self, pmid: str) -> bool:
         """Check if a paper's XML already exists on disk."""
