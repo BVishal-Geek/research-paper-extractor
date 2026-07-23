@@ -30,6 +30,11 @@ from rpextractor.utils.logger import get_logger
 file_name = os.path.basename(__file__)
 logger = get_logger(file_name)
 
+# Total LLM attempts per paper: 1 initial + up to (MAX_ATTEMPTS - 1) retries.
+# The retry loop feeds both the previous raw output AND the ValidationError
+# back to the model so it can see what it produced and what was wrong.
+DEFAULT_MAX_ATTEMPTS = 4
+
 
 class Extractor:
     """Runs LLM extraction over parsed papers and persists validated results."""
@@ -39,6 +44,7 @@ class Extractor:
         input_dir: Path | None = None,
         output_dir: Path | None = None,
         client: BaseLLMClient | None = None,
+        max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     ):
         """Initialize with input/output dirs and an LLM client.
 
@@ -47,34 +53,66 @@ class Extractor:
             output_dir: Where extracted JSONs go. Defaults to BASE_DIR/data/extracted.
             client: LLM client. Defaults to the configured one from llm.yaml.
                 Inject a fake client here for tests.
+            max_attempts: Total LLM attempts per paper (initial + retries).
+                Defaults to 4 = 1 initial + 3 retries.
         """
         self.input_dir = input_dir or (BASE_DIR / "data" / "processed")
         self.output_dir = output_dir or (BASE_DIR / "data" / "extracted")
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.client = client or get_llm_client()
+        self.max_attempts = max_attempts
 
         logger.info(
-            f"Extractor initialized. Input: {self.input_dir}, Output: {self.output_dir}"
+            f"Extractor initialized. Input: {self.input_dir}, "
+            f"Output: {self.output_dir}, max_attempts: {self.max_attempts}"
         )
 
     def _already_extracted(self, pmcid: str) -> bool:
         """Return True if the extracted JSON for this pmcid already exists."""
         return (self.output_dir / f"{pmcid}.json").exists()
 
+    def _build_retry_message(
+        self, original_user_msg: str, attempt: int, prev_raw: str, error: ValidationError
+    ) -> str:
+        """Compose the retry prompt: original paper + previous output + error."""
+        return (
+            f"{original_user_msg}\n\n"
+            f"Attempt {attempt} failed validation.\n"
+            f"Your previous output was:\n{prev_raw}\n\n"
+            f"Validation error:\n{error}\n\n"
+            "Return ONLY valid JSON that matches the schema exactly. "
+            "Fix the specific fields flagged above."
+        )
+
     def _call_and_validate(self, user_msg: str) -> ExtractionResult:
-        """Send the prompt, validate the response, retry once on failure."""
-        raw = self.client.chat_json(SYSTEM_PAPER_EVALUATION_PROMPT, user_msg)
-        try:
-            return ExtractionResult.model_validate_json(raw)
-        except ValidationError as e:
-            # Feed the validation error back so the LLM knows what to fix.
-            retry_msg = (
-                f"{user_msg}\n\n"
-                f"Your previous output failed validation:\n{e}\n"
-                "Return ONLY valid JSON that matches the schema exactly."
-            )
-            raw = self.client.chat_json(SYSTEM_PAPER_EVALUATION_PROMPT, retry_msg)
-            return ExtractionResult.model_validate_json(raw)
+        """Send the prompt, validate, retry up to max_attempts total.
+
+        Each retry sends the previous raw LLM output and the exact
+        ValidationError message back to the model, so it has both what it
+        produced and what was wrong with it.
+        """
+        current_msg = user_msg
+        last_error: ValidationError | None = None
+        last_raw: str = ""
+
+        for attempt in range(1, self.max_attempts + 1):
+            raw = self.client.chat_json(SYSTEM_PAPER_EVALUATION_PROMPT, current_msg)
+            try:
+                return ExtractionResult.model_validate_json(raw)
+            except ValidationError as e:
+                last_error = e
+                last_raw = raw
+                logger.warning(
+                    f"Attempt {attempt}/{self.max_attempts} failed validation"
+                )
+                if attempt < self.max_attempts:
+                    current_msg = self._build_retry_message(user_msg, attempt, raw, e)
+
+        # All attempts exhausted — surface the last error to the caller.
+        logger.error(
+            f"All {self.max_attempts} attempts failed. Last raw output: {last_raw!r}"
+        )
+        raise last_error  # pylint: disable=raising-bad-type  # None-guarded by loop
 
     def _extract_single(self, processed_path: Path) -> dict:
         """Extract one paper and write the validated result to disk."""
@@ -112,7 +150,9 @@ class Extractor:
         """Extract every parsed paper in input_dir. Returns a summary dict."""
         logger.info("Starting extractor")
 
-        json_files = list(self.input_dir.glob("*.json"))
+        # Recursive glob handles both flat (data/processed/*.json) and
+        # date-stamped (data/processed/YYYY-MM-DD/*.json) layouts.
+        json_files = list(self.input_dir.glob("**/*.json"))
 
         if not json_files:
             logger.warning(f"No processed JSON files under {self.input_dir}")

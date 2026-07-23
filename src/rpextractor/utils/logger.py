@@ -54,7 +54,13 @@ def get_logger(name: str, level= logging.DEBUG) -> logging.Logger:
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
 
-    # ── Attach handler ──
+    # ── Stream handler (console) — INFO+ so debug spam stays in the file ──
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.INFO)
+    stream_handler.setFormatter(formatter)
+
+    # ── Attach handlers ──
     logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
 
     return logger

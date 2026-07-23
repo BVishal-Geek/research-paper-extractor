@@ -37,7 +37,7 @@ the model is pulled:
 
 ```bash
 ollama serve
-ollama pull qwen2.5:7b-instruct
+ollama pull qwen3.5:4b
 ```
 
 ## Environment Variables
@@ -48,7 +48,7 @@ Add these to `.env` (see `.env.example`):
 | --- | --- | --- |
 | `EMAIL` | Ingestion | Identifies you to the PubMed Entrez API |
 | `API_KEY_PUBMED` | Ingestion | PubMed API key (higher rate limits) |
-| `OPENAI_API_KEY` | OpenAI provider only | Used when `configs/llm.yaml` sets `provider: openai` |
+| `OPENAI_API_KEY` | OpenAI provider only | Used when the pipeline is run with `--provider openai` |
 
 ## Project Structure
 
@@ -63,28 +63,78 @@ research-paper-extractor/
 │   ├── ingestion/              # PubMedClient, Downloader, XMLParser, Preprocessor
 │   ├── extraction/             # schema, prompts, input_builder, extractor
 │   ├── llm/                    # BaseLLMClient + Ollama/OpenAI clients + factory
+│   ├── pipeline/               # main.py — end-to-end orchestrator (CLI entry point)
 │   ├── evaluation/             # (to be built) ground truth loader + metrics
-│   ├── pipeline/               # (to be built) end-to-end orchestrator
 │   └── utils/                  # config loader, logger, text cleaner
-├── tests/                      # pytest suite
+├── tests/                      # pytest suite (52 tests)
 ├── requirements.txt
 └── setup.py
 ```
 
 ## Running the Pipeline
 
-```python
-from rpextractor.ingestion.downloader import Downloader
-from rpextractor.ingestion.preprocessor import Preprocessor
-from rpextractor.extraction.extractor import Extractor
+The orchestrator at `src/rpextractor/pipeline/main.py` runs the three stages
+in order: **download → preprocess → extract**.
 
-Downloader().run()      # PubMed → data/raw/<timestamp>/*.xml
-Preprocessor().run()    # → data/processed/<pmcid>.json
-Extractor().run()       # → data/extracted/<pmcid>.json
+```bash
+# Default: local Ollama, all three stages
+python -m rpextractor.pipeline.main
+
+# Use OpenAI instead of Ollama
+python -m rpextractor.pipeline.main --provider openai
+
+# Skip stages you've already run (e.g. iterate on prompts without re-downloading)
+python -m rpextractor.pipeline.main --skip-download --skip-preprocess
+python -m rpextractor.pipeline.main --provider openai --skip-download
 ```
+
+CLI flags:
+
+| Flag | Effect |
+| --- | --- |
+| `--provider {local_model,openai}` | LLM backend for the extraction stage. Default: `local_model` (Ollama) |
+| `--skip-download` | Reuse whatever is already in `data/raw/` |
+| `--skip-preprocess` | Reuse whatever is already in `data/processed/` |
+| `--skip-extract` | Download + parse only; no LLM call, no cost |
+
+**How many papers per run:** set `max_results` in `configs/pubmed.yaml`.
+
+**Retry behavior:** if the LLM returns malformed JSON or a response that
+violates the schema's "not found" rule, the extractor retries up to 3 times
+(4 total attempts). Each retry sends the previous raw LLM output and the
+exact `ValidationError` back to the model so it can self-correct.
+
+**Cost guard (OpenAI only):** `configs/llm.yaml` has a
+`max_cost_usd_per_run` ceiling. The OpenAI client tracks cumulative spend
+per run and raises `CostCeilingExceeded` before making a call that would
+push it over.
 
 ## Running Tests
 
 ```bash
 .venv/bin/python -m pytest tests/ -v
+```
+
+**What to expect:** 52 tests, all passing in under a second. Every test
+runs offline — no real Ollama, OpenAI, or PubMed calls happen. The LLM
+clients are replaced by pre-baked stubs, temp directories isolate file I/O,
+and monkeypatched module imports keep the factory tests hermetic.
+
+Coverage by module:
+
+| Test file | Count | What it covers |
+| --- | --- | --- |
+| `test_schema.py` | 11 | Pydantic model, "not found" validator, case-insensitivity, malformed-JSON rejection |
+| `test_input_builder.py` | 5 | Section selection, empty-section skipping, custom section list |
+| `test_extractor.py` | 6 | Happy path, retry-with-feedback loop, max-attempts config, skip-if-exists |
+| `test_preprocessor.py` | 3 | XML → JSON conversion, idempotent skip, empty-input handling |
+| `test_pipeline_main.py` | 9 | Orchestrator wiring, skip flags, CLI provider aliasing |
+| `test_factory.py` | 5 | Provider selection, config fallbacks, unknown-provider error |
+| `test_openai_client.py` | 5 | Missing key, response parsing, cost accumulation, ceiling guard |
+| `test_text_cleaner.py` | 8 | Citation stripping, whitespace collapsing, non-citation preservation |
+
+Run just one file:
+
+```bash
+.venv/bin/python -m pytest tests/test_schema.py -v
 ```

@@ -91,28 +91,59 @@ def test_writes_valid_extraction_result(dirs_with_one_paper):
     assert data["dataset_E_reason"] == "GEO GSE12345 is used."
 
 
-def test_retries_once_on_validation_error(dirs_with_one_paper):
-    """First response fails validator, second succeeds — one output written."""
+def test_retries_up_to_max_attempts_with_prior_output_and_error(dirs_with_one_paper):
+    """Three bad responses then a valid one — 4th attempt succeeds.
+
+    Each retry prompt must include both the previous raw LLM output and the
+    validation error, so the model sees what it produced and what was wrong.
+    """
     processed, extracted = dirs_with_one_paper
-    client = FakeClient([INVALID_LLM_JSON, VALID_LLM_JSON])
+    client = FakeClient([
+        INVALID_LLM_JSON,
+        INVALID_LLM_JSON,
+        INVALID_LLM_JSON,
+        VALID_LLM_JSON,
+    ])
 
     summary = Extractor(input_dir=processed, output_dir=extracted, client=client).run()
 
     assert summary["success"] == 1
-    assert len(client.calls) == 2
-    # Retry message must include the validation error feedback.
-    assert "failed validation" in client.calls[1][1]
+    assert len(client.calls) == 4  # 1 initial + 3 retries
+
+    # Retry #1 message (2nd call) must contain the previous raw output AND the error.
+    _, retry1_user = client.calls[1]
+    assert INVALID_LLM_JSON in retry1_user, "retry must include previous raw output"
+    assert "Validation error" in retry1_user, "retry must include the validation error"
+    assert "Attempt 1 failed" in retry1_user
+
+    # Retry #3 (4th call) should reference attempt 3.
+    _, retry3_user = client.calls[3]
+    assert "Attempt 3 failed" in retry3_user
 
 
-def test_fails_when_both_attempts_invalid(dirs_with_one_paper):
-    """Two bad responses → summary reports failed=1, no output written."""
+def test_fails_when_all_attempts_invalid(dirs_with_one_paper):
+    """Four bad responses in a row → failed=1, no output written."""
     processed, extracted = dirs_with_one_paper
-    client = FakeClient([INVALID_LLM_JSON, INVALID_LLM_JSON])
+    client = FakeClient([INVALID_LLM_JSON] * 4)
 
     summary = Extractor(input_dir=processed, output_dir=extracted, client=client).run()
 
     assert summary["failed"] == 1
+    assert len(client.calls) == 4
     assert not (extracted / "PMC123.json").exists()
+
+
+def test_max_attempts_is_configurable(dirs_with_one_paper):
+    """max_attempts=2 → only 1 initial + 1 retry, no extra calls."""
+    processed, extracted = dirs_with_one_paper
+    client = FakeClient([INVALID_LLM_JSON, INVALID_LLM_JSON])
+
+    summary = Extractor(
+        input_dir=processed, output_dir=extracted, client=client, max_attempts=2
+    ).run()
+
+    assert summary["failed"] == 1
+    assert len(client.calls) == 2
 
 
 def test_skips_when_already_extracted(dirs_with_one_paper):
