@@ -65,6 +65,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Skip LLM extraction; useful for download + parse only.",
     )
+    parser.add_argument(
+        "--processed-batch",
+        default=None,
+        metavar="BATCH",
+        help=(
+            "Which processed batch to extract from. Values: "
+            "'latest' (newest date-stamped subfolder), a date string like "
+            "'2026-07-22' (that specific subfolder), or 'all' / unset "
+            "(every processed JSON, recursive — default)."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -73,11 +84,15 @@ def run_pipeline(
     skip_download: bool = False,
     skip_preprocess: bool = False,
     skip_extract: bool = False,
+    input_batch: str | None = None,
 ) -> dict:
     """Run the three stages in order and return a per-stage summary dict.
 
     `provider` is the factory-facing name (e.g. "ollama", "openai"), NOT the
     CLI alias. Callers coming from the CLI must resolve the alias first.
+
+    `input_batch` is passed through to Extractor so callers can restrict the
+    LLM stage to a single date-stamped subfolder. See Extractor docstring.
     """
     summary: dict = {}
 
@@ -96,9 +111,12 @@ def run_pipeline(
     if skip_extract:
         logger.info("Skipping extract stage")
     else:
-        logger.info(f"STAGE 3/3 — Extracting with LLM (provider={provider})")
+        logger.info(
+            f"STAGE 3/3 — Extracting with LLM (provider={provider}, "
+            f"input_batch={input_batch!r})"
+        )
         client = get_llm_client(provider=provider)
-        summary["extract"] = Extractor(client=client).run()
+        summary["extract"] = Extractor(client=client, input_batch=input_batch).run()
 
     return summary
 
@@ -115,6 +133,7 @@ def main(argv: list[str] | None = None) -> int:
         skip_download=args.skip_download,
         skip_preprocess=args.skip_preprocess,
         skip_extract=args.skip_extract,
+        input_batch=args.processed_batch,
     )
 
     logger.info("Pipeline complete")
