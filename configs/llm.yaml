@@ -1,7 +1,7 @@
 provider: ollama  # one of: ollama, openai
 
 ollama:
-  model: qwen2.5:7b-instruct
+  model: qwen3.5:4b
   host: http://localhost:11434
   timeout: 120  # seconds
   options:
