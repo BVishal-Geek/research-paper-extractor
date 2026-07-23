@@ -66,7 +66,7 @@ research-paper-extractor/
 │   ├── pipeline/               # main.py — end-to-end orchestrator (CLI entry point)
 │   ├── evaluation/             # (to be built) ground truth loader + metrics
 │   └── utils/                  # config loader, logger, text cleaner
-├── tests/                      # pytest suite (63 tests)
+├── tests/                      # pytest suite (78 tests)
 ├── requirements.txt
 └── setup.py
 ```
@@ -94,6 +94,12 @@ python -m rpextractor.pipeline.main --skip-download --skip-preprocess \
 # Only extract a specific batch — reproducible cost / scope
 python -m rpextractor.pipeline.main --provider openai --skip-download \
     --skip-preprocess --processed-batch 2026-07-22
+
+# Download an explicit list of PMCIDs instead of running a PubMed search
+python -m rpextractor.pipeline.main --pmcids path/to/pmcids.txt
+
+# Same idea, end-to-end with OpenAI on a ground-truth set
+python -m rpextractor.pipeline.main --provider openai --pmcids ground_truth_pmcids.txt
 ```
 
 CLI flags:
@@ -105,6 +111,7 @@ CLI flags:
 | `--skip-preprocess` | Reuse whatever is already in `data/processed/` |
 | `--skip-extract` | Download + parse only; no LLM call, no cost |
 | `--processed-batch BATCH` | Restrict extraction to a subset of `data/processed/`. See below. |
+| `--pmcids PATH` | Download an explicit list of PMCIDs instead of running a PubMed search. See below. |
 
 **`--processed-batch` values:**
 
@@ -119,7 +126,53 @@ Useful when the preprocessor has produced multiple batches on different
 days and you want to scope a run to just one — e.g. to control OpenAI cost,
 or to iterate on prompts against a fixed set of papers.
 
-**How many papers per run:** set `max_results` in `configs/pubmed.yaml`.
+**`--pmcids PATH` — download an explicit list**
+
+By default, the download stage runs the PubMed query in
+`configs/pubmed.yaml` and downloads whatever it finds (up to `max_results`).
+When you pass `--pmcids <file>`, the search step is skipped and the
+downloader fetches exactly the PMCIDs listed in that file — no cap, no
+query.
+
+*File format:* plain text, whitespace-separated. Any layout works — one per
+line, several per line, mixed. Both `PMC12345` and bare `12345` are
+accepted; the loader normalizes everything to canonical `PMC12345`
+internally. Non-numeric junk (headers, comments) is silently ignored.
+
+Example `pmcids.txt`:
+
+```
+PMC12662548
+PMC13221707
+PMC6685771
+```
+
+Or equivalently:
+
+```
+# my ground truth set — comments are ignored
+PMC12662548 12662548 pmc13221707
+PMC6685771
+```
+
+*When to use it (three concrete scenarios):*
+
+1. **You have a ground truth set to evaluate against.** Your CSV lists,
+   say, 20 specific PMCIDs. You want the extractor to produce output for
+   *those exact 20 papers* so the eval module can diff `data/extracted/`
+   against your gold values. Run:
+   ```bash
+   python -m rpextractor.pipeline.main --provider openai --pmcids gt_pmcids.txt
+   ```
+2. **You're reproducing a published result.** The paper lists specific
+   PubMed IDs. Drop them in a text file and rerun the pipeline — same
+   inputs every time, no dependence on PubMed query result ordering.
+3. **You want to iterate on a small, cheap batch.** Pull 2-3 PMCIDs into
+   a file, run with `--provider openai`, and you know exactly what the run
+   will cost before it starts (no surprise from `max_results`).
+
+**How many papers per run:** set `max_results` in `configs/pubmed.yaml`
+(applies only in search-driven mode; `--pmcids` uses the full list).
 
 **Retry behavior:** if the LLM returns malformed JSON or a response that
 violates the schema's "not found" rule, the extractor retries up to 3 times
@@ -137,7 +190,7 @@ push it over.
 .venv/bin/python -m pytest tests/ -v
 ```
 
-**What to expect:** 63 tests, all passing in under a second. Every test
+**What to expect:** 78 tests, all passing in under a second. Every test
 runs offline — no real Ollama, OpenAI, or PubMed calls happen. The LLM
 clients are replaced by pre-baked stubs, temp directories isolate file I/O,
 and monkeypatched module imports keep the factory tests hermetic.
@@ -150,7 +203,8 @@ Coverage by module:
 | `test_input_builder.py` | 5 | Section selection, empty-section skipping, custom section list |
 | `test_extractor.py` | 12 | Happy path, retry-with-feedback loop, max-attempts config, skip-if-exists, `input_batch` modes (none / `all` / `latest` / date / nonexistent / flat fallback) |
 | `test_preprocessor.py` | 3 | XML → JSON conversion, idempotent skip, empty-input handling |
-| `test_pipeline_main.py` | 14 | Orchestrator wiring, skip flags, CLI provider aliasing, `--processed-batch` parsing + passthrough |
+| `test_pipeline_main.py` | 18 | Orchestrator wiring, skip flags, CLI provider aliasing, `--processed-batch` parsing + passthrough, `--pmcids` file loading + Downloader passthrough |
+| `test_pmcid_loader.py` | 11 | PMCID normalization: prefix handling, case-folding, dedup, whitespace layouts, junk-token dropping |
 | `test_factory.py` | 5 | Provider selection, config fallbacks, unknown-provider error |
 | `test_openai_client.py` | 5 | Missing key, response parsing, cost accumulation, ceiling guard |
 | `test_text_cleaner.py` | 8 | Citation stripping, whitespace collapsing, non-citation preservation |

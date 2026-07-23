@@ -24,7 +24,9 @@ class _FakeStage:
         self.init_kwargs = kwargs
         _FakeStage.instances.append(self)
 
-    def run(self):
+    def run(self, **_kwargs):
+        # **_kwargs makes this a drop-in stand-in for both Downloader.run()
+        # (which now takes pmids=) and the arg-less Preprocessor/Extractor.run().
         _FakeStage.calls.append(type(self).__name__)
         return {"total": 1, "success": 1, "skipped": 0, "failed": 0}
 
@@ -189,3 +191,65 @@ def test_input_batch_defaults_to_none_at_extractor(monkeypatch):
     pipeline_main.main(["--skip-download", "--skip-preprocess"])
 
     assert _CaptureExtractor.seen_batches == [None]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# --pmcids flag: parsing, loader wiring, Downloader passthrough
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_pmcids_defaults_to_none():
+    args = pipeline_main.parse_args([])
+    assert args.pmcids is None
+
+
+def test_pmcids_accepts_path_arg():
+    args = pipeline_main.parse_args(["--pmcids", "/tmp/my-list.txt"])
+    assert args.pmcids == "/tmp/my-list.txt"
+
+
+class _CaptureDownloader(_FakeStage):
+    """Records the pmids list passed to run()."""
+
+    seen_pmids: list = []
+
+    def run(self, **kwargs):  # match Downloader.run signature (query=, pmids=)
+        _CaptureDownloader.seen_pmids.append(kwargs.get("pmids"))
+        _FakeStage.calls.append(type(self).__name__)
+        return {
+            "total": len(kwargs.get("pmids") or []),
+            "success": 0,
+            "skipped": 0,
+            "failed": 0,
+        }
+
+
+def test_pmcids_file_is_loaded_and_passed_to_downloader(monkeypatch, tmp_path):
+    """--pmcids <file> → load_pmcids → Downloader.run(pmids=...)."""
+    pmcids_file = tmp_path / "list.txt"
+    pmcids_file.write_text("PMC12345 pmc67890\n11111\n", encoding="utf-8")
+
+    _CaptureDownloader.seen_pmids = []
+    monkeypatch.setattr(pipeline_main, "Downloader", _CaptureDownloader)
+    monkeypatch.setattr(pipeline_main, "Preprocessor", _FakeStage)
+    monkeypatch.setattr(pipeline_main, "Extractor", _FakeStage)
+    monkeypatch.setattr(pipeline_main, "get_llm_client", lambda provider: object())
+
+    exit_code = pipeline_main.main(["--pmcids", str(pmcids_file)])
+
+    assert exit_code == 0
+    # Loader normalizes all three tokens; Downloader saw exactly that list.
+    assert _CaptureDownloader.seen_pmids == [["PMC12345", "PMC67890", "PMC11111"]]
+
+
+def test_downloader_receives_none_when_no_pmcids_flag(monkeypatch):
+    """No --pmcids → Downloader.run(pmids=None), search runs as usual."""
+    _CaptureDownloader.seen_pmids = []
+    monkeypatch.setattr(pipeline_main, "Downloader", _CaptureDownloader)
+    monkeypatch.setattr(pipeline_main, "Preprocessor", _FakeStage)
+    monkeypatch.setattr(pipeline_main, "Extractor", _FakeStage)
+    monkeypatch.setattr(pipeline_main, "get_llm_client", lambda provider: object())
+
+    pipeline_main.main([])
+
+    assert _CaptureDownloader.seen_pmids == [None]
