@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 
 from rpextractor.extraction.extractor import Extractor
 from rpextractor.ingestion.downloader import Downloader
+from rpextractor.ingestion.pmcid_loader import load_pmcids
 from rpextractor.ingestion.preprocessor import Preprocessor
 from rpextractor.llm.factory import get_llm_client
 from rpextractor.utils.logger import get_logger
@@ -76,15 +77,39 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "(every processed JSON, recursive — default)."
         ),
     )
+    parser.add_argument(
+        "--pmcids",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Path to a whitespace-separated text file of PMCIDs to download. "
+            "When set, the PubMed search step is skipped and configs/pubmed.yaml's "
+            "max_results cap is ignored. Accepts 'PMC12345' or bare '12345'; "
+            "both normalize to canonical 'PMC12345' internally."
+        ),
+    )
+    parser.add_argument(
+        "--max-downloads",
+        default=None,
+        type=int,
+        metavar="N",
+        help=(
+            "Cap on how many papers to download in search-driven mode. "
+            "Overrides configs/pubmed.yaml's max_results for this run. "
+            "Ignored when --pmcids is given (list is used as-is)."
+        ),
+    )
     return parser.parse_args(argv)
 
 
-def run_pipeline(
+def run_pipeline(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     provider: str,
     skip_download: bool = False,
     skip_preprocess: bool = False,
     skip_extract: bool = False,
     input_batch: str | None = None,
+    pmcids: list[str] | None = None,
+    max_downloads: int | None = None,
 ) -> dict:
     """Run the three stages in order and return a per-stage summary dict.
 
@@ -93,14 +118,27 @@ def run_pipeline(
 
     `input_batch` is passed through to Extractor so callers can restrict the
     LLM stage to a single date-stamped subfolder. See Extractor docstring.
+
+    `pmcids`, when provided, replaces the PubMed search step in the download
+    stage — the Downloader will fetch exactly this list.
+
+    `max_downloads` is a search-mode cap that overrides pubmed.yaml's
+    max_results for this run. Ignored when `pmcids` is given.
     """
     summary: dict = {}
 
     if skip_download:
         logger.info("Skipping download stage")
     else:
-        logger.info("STAGE 1/3 — Downloading XMLs from PubMed")
-        summary["download"] = Downloader().run()
+        if pmcids is not None:
+            logger.info(
+                f"STAGE 1/3 — Downloading {len(pmcids)} explicit PMCIDs (search skipped)"
+            )
+        else:
+            logger.info(
+                f"STAGE 1/3 — Downloading XMLs from PubMed (max_downloads={max_downloads})"
+            )
+        summary["download"] = Downloader().run(pmids=pmcids, max_results=max_downloads)
 
     if skip_preprocess:
         logger.info("Skipping preprocess stage")
@@ -128,12 +166,18 @@ def main(argv: list[str] | None = None) -> int:
 
     logger.info(f"Pipeline starting (cli_provider={args.provider}, resolved={provider})")
 
+    pmcids = load_pmcids(args.pmcids) if args.pmcids else None
+    if pmcids is not None:
+        logger.info(f"Loaded {len(pmcids)} PMCIDs from {args.pmcids}")
+
     summary = run_pipeline(
         provider=provider,
         skip_download=args.skip_download,
         skip_preprocess=args.skip_preprocess,
         skip_extract=args.skip_extract,
         input_batch=args.processed_batch,
+        pmcids=pmcids,
+        max_downloads=args.max_downloads,
     )
 
     logger.info("Pipeline complete")

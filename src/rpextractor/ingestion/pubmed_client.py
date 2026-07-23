@@ -35,10 +35,17 @@ class PubMedClient:  # pylint: disable=too-many-instance-attributes
         self.sort = config.get("sort", "relevance")
         self.rettype = config.get("rettype", "full")
 
-    def search(self, query: str = None) -> list[str]:
-        """Search PubMed with the given query and return a list of PMIDs."""
+    def search(self, query: str = None, max_results: int | None = None) -> list[str]:
+        """Search PubMed and return a list of PMIDs.
+
+        Args:
+            query: Search query. Defaults to the one in pubmed.yaml.
+            max_results: Optional cap. Defaults to `max_results` in pubmed.yaml.
+        """
         if query is None:
             query = self.query
+        if max_results is None:
+            max_results = self.max_results
 
         query  = f"{query} AND {self.mindate}[{self.datetype}]"
         logger.info(f"Using default query from config : {query}")
@@ -46,7 +53,7 @@ class PubMedClient:  # pylint: disable=too-many-instance-attributes
             handle = Entrez.esearch(
                 db=self.database,
                 term=query,
-                retmax=self.max_results,
+                retmax=max_results,
                 sort=self.sort,
                 retmode=self.retmode,
                 usehistory="y"
