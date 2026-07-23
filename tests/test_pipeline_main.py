@@ -132,3 +132,60 @@ def test_cli_default_provider_is_local_model(stub_stages):
 def test_cli_rejects_unknown_provider():
     with pytest.raises(SystemExit):
         pipeline_main.parse_args(["--provider", "gemini"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# --processed-batch flag: parsing + passthrough to Extractor
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_processed_batch_defaults_to_none():
+    args = pipeline_main.parse_args([])
+    assert args.processed_batch is None
+
+
+def test_processed_batch_accepts_date_string():
+    args = pipeline_main.parse_args(["--processed-batch", "2026-07-22"])
+    assert args.processed_batch == "2026-07-22"
+
+
+def test_processed_batch_accepts_latest_and_all():
+    assert pipeline_main.parse_args(["--processed-batch", "latest"]).processed_batch == "latest"
+    assert pipeline_main.parse_args(["--processed-batch", "all"]).processed_batch == "all"
+
+
+class _CaptureExtractor(_FakeStage):
+    """Records the input_batch it was constructed with."""
+
+    seen_batches: list = []
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        _CaptureExtractor.seen_batches.append(kwargs.get("input_batch"))
+
+
+def test_input_batch_reaches_extractor(monkeypatch):
+    """--processed-batch value must flow through run_pipeline to Extractor kwargs."""
+    _CaptureExtractor.seen_batches = []
+    monkeypatch.setattr(pipeline_main, "Extractor", _CaptureExtractor)
+    monkeypatch.setattr(pipeline_main, "get_llm_client", lambda provider: object())
+
+    exit_code = pipeline_main.main([
+        "--skip-download",
+        "--skip-preprocess",
+        "--processed-batch", "2026-07-22",
+    ])
+
+    assert exit_code == 0
+    assert _CaptureExtractor.seen_batches == ["2026-07-22"]
+
+
+def test_input_batch_defaults_to_none_at_extractor(monkeypatch):
+    """No --processed-batch → Extractor receives input_batch=None (all)."""
+    _CaptureExtractor.seen_batches = []
+    monkeypatch.setattr(pipeline_main, "Extractor", _CaptureExtractor)
+    monkeypatch.setattr(pipeline_main, "get_llm_client", lambda provider: object())
+
+    pipeline_main.main(["--skip-download", "--skip-preprocess"])
+
+    assert _CaptureExtractor.seen_batches == [None]

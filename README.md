@@ -66,7 +66,7 @@ research-paper-extractor/
 │   ├── pipeline/               # main.py — end-to-end orchestrator (CLI entry point)
 │   ├── evaluation/             # (to be built) ground truth loader + metrics
 │   └── utils/                  # config loader, logger, text cleaner
-├── tests/                      # pytest suite (52 tests)
+├── tests/                      # pytest suite (63 tests)
 ├── requirements.txt
 └── setup.py
 ```
@@ -86,6 +86,14 @@ python -m rpextractor.pipeline.main --provider openai
 # Skip stages you've already run (e.g. iterate on prompts without re-downloading)
 python -m rpextractor.pipeline.main --skip-download --skip-preprocess
 python -m rpextractor.pipeline.main --provider openai --skip-download
+
+# Only extract the newest batch of processed papers (skips older date folders)
+python -m rpextractor.pipeline.main --skip-download --skip-preprocess \
+    --processed-batch latest
+
+# Only extract a specific batch — reproducible cost / scope
+python -m rpextractor.pipeline.main --provider openai --skip-download \
+    --skip-preprocess --processed-batch 2026-07-22
 ```
 
 CLI flags:
@@ -96,6 +104,20 @@ CLI flags:
 | `--skip-download` | Reuse whatever is already in `data/raw/` |
 | `--skip-preprocess` | Reuse whatever is already in `data/processed/` |
 | `--skip-extract` | Download + parse only; no LLM call, no cost |
+| `--processed-batch BATCH` | Restrict extraction to a subset of `data/processed/`. See below. |
+
+**`--processed-batch` values:**
+
+| Value | What gets extracted |
+| --- | --- |
+| unset *(default)* | Every JSON found under `data/processed/`, recursively |
+| `all` | Same as unset — explicit "everything" |
+| `latest` | Only the newest date-stamped subfolder (e.g. `data/processed/2026-07-24/`) |
+| `YYYY-MM-DD` (e.g. `2026-07-22`) | Only that exact subfolder. Empty result (no crash) if it doesn't exist |
+
+Useful when the preprocessor has produced multiple batches on different
+days and you want to scope a run to just one — e.g. to control OpenAI cost,
+or to iterate on prompts against a fixed set of papers.
 
 **How many papers per run:** set `max_results` in `configs/pubmed.yaml`.
 
@@ -115,7 +137,7 @@ push it over.
 .venv/bin/python -m pytest tests/ -v
 ```
 
-**What to expect:** 52 tests, all passing in under a second. Every test
+**What to expect:** 63 tests, all passing in under a second. Every test
 runs offline — no real Ollama, OpenAI, or PubMed calls happen. The LLM
 clients are replaced by pre-baked stubs, temp directories isolate file I/O,
 and monkeypatched module imports keep the factory tests hermetic.
@@ -126,9 +148,9 @@ Coverage by module:
 | --- | --- | --- |
 | `test_schema.py` | 11 | Pydantic model, "not found" validator, case-insensitivity, malformed-JSON rejection |
 | `test_input_builder.py` | 5 | Section selection, empty-section skipping, custom section list |
-| `test_extractor.py` | 6 | Happy path, retry-with-feedback loop, max-attempts config, skip-if-exists |
+| `test_extractor.py` | 12 | Happy path, retry-with-feedback loop, max-attempts config, skip-if-exists, `input_batch` modes (none / `all` / `latest` / date / nonexistent / flat fallback) |
 | `test_preprocessor.py` | 3 | XML → JSON conversion, idempotent skip, empty-input handling |
-| `test_pipeline_main.py` | 9 | Orchestrator wiring, skip flags, CLI provider aliasing |
+| `test_pipeline_main.py` | 14 | Orchestrator wiring, skip flags, CLI provider aliasing, `--processed-batch` parsing + passthrough |
 | `test_factory.py` | 5 | Provider selection, config fallbacks, unknown-provider error |
 | `test_openai_client.py` | 5 | Missing key, response parsing, cost accumulation, ceiling guard |
 | `test_text_cleaner.py` | 8 | Citation stripping, whitespace collapsing, non-citation preservation |

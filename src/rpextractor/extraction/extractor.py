@@ -45,6 +45,7 @@ class Extractor:
         output_dir: Path | None = None,
         client: BaseLLMClient | None = None,
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+        input_batch: str | None = None,
     ):
         """Initialize with input/output dirs and an LLM client.
 
@@ -55,16 +56,22 @@ class Extractor:
                 Inject a fake client here for tests.
             max_attempts: Total LLM attempts per paper (initial + retries).
                 Defaults to 4 = 1 initial + 3 retries.
+            input_batch: Which processed batch to extract from.
+                None or "all" — every JSON found recursively under input_dir.
+                "latest" — the newest date-stamped subfolder only.
+                A date string like "2026-07-22" — that specific subfolder only.
         """
         self.input_dir = input_dir or (BASE_DIR / "data" / "processed")
         self.output_dir = output_dir or (BASE_DIR / "data" / "extracted")
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.client = client or get_llm_client()
         self.max_attempts = max_attempts
+        self.input_batch = input_batch
 
         logger.info(
             f"Extractor initialized. Input: {self.input_dir}, "
-            f"Output: {self.output_dir}, max_attempts: {self.max_attempts}"
+            f"Output: {self.output_dir}, max_attempts: {self.max_attempts}, "
+            f"input_batch: {self.input_batch!r}"
         )
 
     def _already_extracted(self, pmcid: str) -> bool:
@@ -146,16 +153,52 @@ class Extractor:
             logger.error(f"{pmcid} extraction failed: {e}")
             return {"pmcid": pmcid, "status": "failed", "message": str(e)}
 
-    def run(self) -> dict:
-        """Extract every parsed paper in input_dir. Returns a summary dict."""
-        logger.info("Starting extractor")
+    def _resolve_input_files(self) -> list[Path]:
+        """Return the list of processed JSONs to extract, per input_batch mode.
 
-        # Recursive glob handles both flat (data/processed/*.json) and
-        # date-stamped (data/processed/YYYY-MM-DD/*.json) layouts.
-        json_files = list(self.input_dir.glob("**/*.json"))
+        Modes:
+            None / "all"        — every *.json under input_dir, recursively.
+            "latest"            — files in the newest date-stamped subfolder.
+                                  Falls back to the flat glob if no subfolders exist.
+            "<YYYY-MM-DD>"      — files in that exact subfolder only. Empty list
+                                  (with a warning) if the folder does not exist.
+        """
+        batch = self.input_batch
+
+        if batch is None or batch == "all":
+            # Recursive glob handles both flat (data/processed/*.json) and
+            # date-stamped (data/processed/YYYY-MM-DD/*.json) layouts.
+            return list(self.input_dir.glob("**/*.json"))
+
+        if batch == "latest":
+            date_dirs = sorted(
+                (d for d in self.input_dir.iterdir() if d.is_dir()),
+                key=lambda d: d.name,
+            )
+            if not date_dirs:
+                logger.warning(
+                    f"input_batch='latest' but no subfolders under {self.input_dir}; "
+                    "falling back to flat glob"
+                )
+                return list(self.input_dir.glob("*.json"))
+            newest = date_dirs[-1]
+            logger.info(f"input_batch='latest' resolved to {newest.name}")
+            return list(newest.glob("*.json"))
+
+        # Explicit date-string batch.
+        batch_dir = self.input_dir / batch
+        if not batch_dir.is_dir():
+            logger.warning(f"input_batch={batch!r} — folder does not exist: {batch_dir}")
+            return []
+        return list(batch_dir.glob("*.json"))
+
+    def run(self) -> dict:
+        """Extract parsed papers based on input_batch selection. Returns a summary dict."""
+        logger.info("Starting extractor")
+        json_files = self._resolve_input_files()
 
         if not json_files:
-            logger.warning(f"No processed JSON files under {self.input_dir}")
+            logger.warning(f"No processed JSON files for input_batch={self.input_batch!r}")
             return {"total": 0, "success": 0, "skipped": 0, "failed": 0}
 
         logger.info(f"Found {len(json_files)} processed papers")
