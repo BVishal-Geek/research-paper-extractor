@@ -66,7 +66,9 @@ research-paper-extractor/
 │   ├── pipeline/               # main.py — end-to-end orchestrator (CLI entry point)
 │   ├── evaluation/             # (to be built) ground truth loader + metrics
 │   └── utils/                  # config loader, logger, text cleaner
-├── tests/                      # pytest suite (78 tests)
+├── tests/                      # pytest suite (82 tests)
+├── Dockerfile                  # Container recipe — see "Running in Docker"
+├── .dockerignore
 ├── requirements.txt
 └── setup.py
 ```
@@ -190,13 +192,67 @@ exact `ValidationError` back to the model so it can self-correct.
 per run and raises `CostCeilingExceeded` before making a call that would
 push it over.
 
+## Running in Docker
+
+A single `Dockerfile` at the repo root packages the pipeline as a runnable
+image. This is the recommended way to hand the project to someone else —
+they don't need Python, Ollama, or a matching venv, just Docker and your
+`.env`.
+
+### Build the image
+
+```bash
+docker build -t rpextractor .
+```
+
+### Run the pipeline in a container
+
+Two mounts are always needed:
+- `--env-file .env` — supplies `EMAIL`, `API_KEY_PUBMED`, and (for OpenAI)
+  `OPENAI_API_KEY`. Never bake secrets into the image.
+- `-v $(pwd)/data:/app/data` — the container writes `data/raw/`,
+  `data/processed/`, `data/extracted/` here. Without this mount, outputs
+  are lost when the container exits.
+
+```bash
+# Search-driven download + preprocess, no LLM cost
+docker run --rm --env-file .env -v $(pwd)/data:/app/data \
+    rpextractor --max-downloads 2 --skip-extract
+
+# Full pipeline against a fixed PMCID list, OpenAI provider
+docker run --rm --env-file .env -v $(pwd)/data:/app/data \
+    -v $(pwd)/pmcids.txt:/app/pmcids.txt \
+    rpextractor --provider openai --pmcids /app/pmcids.txt
+
+# See all CLI flags
+docker run --rm rpextractor --help
+```
+
+### One gotcha — Ollama in a container
+
+`configs/llm.yaml` defaults to `host: http://localhost:11434`. Inside a
+container, `localhost` is the container itself, not your host machine —
+so an Ollama server running on your host is unreachable by default.
+
+Three ways around it:
+1. **Run Ollama on the host, use host networking:**
+   ```bash
+   docker run --rm --env-file .env --network host \
+       -v $(pwd)/data:/app/data rpextractor --provider local_model
+   ```
+   Linux only; on Mac/Windows use `--add-host=host.docker.internal:host-gateway` and set the host in llm.yaml to `http://host.docker.internal:11434`.
+2. **Use OpenAI instead** — no networking to worry about.
+3. **Compose an Ollama sidecar** — a docker-compose.yml is not included in
+   this minimal setup, but is a natural next step if this becomes a common
+   pattern for you.
+
 ## Running Tests
 
 ```bash
 .venv/bin/python -m pytest tests/ -v
 ```
 
-**What to expect:** 78 tests, all passing in under a second. Every test
+**What to expect:** 82 tests, all passing in under a second. Every test
 runs offline — no real Ollama, OpenAI, or PubMed calls happen. The LLM
 clients are replaced by pre-baked stubs, temp directories isolate file I/O,
 and monkeypatched module imports keep the factory tests hermetic.
@@ -209,7 +265,7 @@ Coverage by module:
 | `test_input_builder.py` | 5 | Section selection, empty-section skipping, custom section list |
 | `test_extractor.py` | 12 | Happy path, retry-with-feedback loop, max-attempts config, skip-if-exists, `input_batch` modes (none / `all` / `latest` / date / nonexistent / flat fallback) |
 | `test_preprocessor.py` | 3 | XML → JSON conversion, idempotent skip, empty-input handling |
-| `test_pipeline_main.py` | 18 | Orchestrator wiring, skip flags, CLI provider aliasing, `--processed-batch` parsing + passthrough, `--pmcids` file loading + Downloader passthrough |
+| `test_pipeline_main.py` | 22 | Orchestrator wiring, skip flags, CLI provider aliasing, `--processed-batch` parsing + passthrough, `--pmcids` file loading + Downloader passthrough, `--max-downloads` int-parsing + passthrough |
 | `test_pmcid_loader.py` | 11 | PMCID normalization: prefix handling, case-folding, dedup, whitespace layouts, junk-token dropping |
 | `test_factory.py` | 5 | Provider selection, config fallbacks, unknown-provider error |
 | `test_openai_client.py` | 5 | Missing key, response parsing, cost accumulation, ceiling guard |

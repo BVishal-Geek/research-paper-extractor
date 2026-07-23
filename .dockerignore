@@ -1,0 +1,38 @@
+# Match .gitignore's spirit: keep the image small, keep secrets out.
+
+# Local virtual envs & caches
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Version control + CI
+.git/
+.github/
+.gitignore
+.gitattributes
+
+# Tests never need to ship in a runtime image
+tests/
+
+# Runtime data — mounted, not baked in
+data/
+logs/
+*.log
+
+# Secrets — must be provided at runtime via --env-file
+.env
+
+# Editor / OS junk
+.DS_Store
+.idea/
+.vscode/
+
+# Docs are for humans, not the runtime
+docs/
+*.md
+!README.md
