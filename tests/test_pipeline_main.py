@@ -253,3 +253,47 @@ def test_downloader_receives_none_when_no_pmcids_flag(monkeypatch):
     pipeline_main.main([])
 
     assert _CaptureDownloader.seen_pmids == [None]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# --max-downloads flag: parses to int, passes through to Downloader
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_max_downloads_defaults_to_none():
+    args = pipeline_main.parse_args([])
+    assert args.max_downloads is None
+
+
+def test_max_downloads_parses_as_int():
+    args = pipeline_main.parse_args(["--max-downloads", "7"])
+    assert args.max_downloads == 7
+
+
+def test_max_downloads_rejects_non_integer():
+    with pytest.raises(SystemExit):
+        pipeline_main.parse_args(["--max-downloads", "seven"])
+
+
+class _CaptureDownloaderMax(_FakeStage):
+    """Records the max_results kwarg passed to run()."""
+
+    seen_max_results: list = []
+
+    def run(self, **kwargs):
+        _CaptureDownloaderMax.seen_max_results.append(kwargs.get("max_results"))
+        _FakeStage.calls.append(type(self).__name__)
+        return {"total": 0, "success": 0, "skipped": 0, "failed": 0}
+
+
+def test_max_downloads_reaches_downloader(monkeypatch):
+    """--max-downloads 5 → Downloader.run(max_results=5)."""
+    _CaptureDownloaderMax.seen_max_results = []
+    monkeypatch.setattr(pipeline_main, "Downloader", _CaptureDownloaderMax)
+    monkeypatch.setattr(pipeline_main, "Preprocessor", _FakeStage)
+    monkeypatch.setattr(pipeline_main, "Extractor", _FakeStage)
+    monkeypatch.setattr(pipeline_main, "get_llm_client", lambda provider: object())
+
+    pipeline_main.main(["--max-downloads", "5"])
+
+    assert _CaptureDownloaderMax.seen_max_results == [5]

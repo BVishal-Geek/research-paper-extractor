@@ -100,6 +100,9 @@ python -m rpextractor.pipeline.main --pmcids path/to/pmcids.txt
 
 # Same idea, end-to-end with OpenAI on a ground-truth set
 python -m rpextractor.pipeline.main --provider openai --pmcids ground_truth_pmcids.txt
+
+# Search-driven, but cap at 2 papers instead of using pubmed.yaml's max_results
+python -m rpextractor.pipeline.main --max-downloads 2
 ```
 
 CLI flags:
@@ -112,6 +115,7 @@ CLI flags:
 | `--skip-extract` | Download + parse only; no LLM call, no cost |
 | `--processed-batch BATCH` | Restrict extraction to a subset of `data/processed/`. See below. |
 | `--pmcids PATH` | Download an explicit list of PMCIDs instead of running a PubMed search. See below. |
+| `--max-downloads N` | Cap the search-driven download at N papers. Overrides `max_results` in `configs/pubmed.yaml` for this run. Ignored when `--pmcids` is given. |
 
 **`--processed-batch` values:**
 
@@ -171,8 +175,10 @@ PMC6685771
    a file, run with `--provider openai`, and you know exactly what the run
    will cost before it starts (no surprise from `max_results`).
 
-**How many papers per run:** set `max_results` in `configs/pubmed.yaml`
-(applies only in search-driven mode; `--pmcids` uses the full list).
+**How many papers per run (search-driven mode):** set `max_results` in
+`configs/pubmed.yaml`, OR pass `--max-downloads N` on the CLI to override
+it for a single run without editing the config. When `--pmcids` is given,
+both are ignored — the full list is downloaded.
 
 **Retry behavior:** if the LLM returns malformed JSON or a response that
 violates the schema's "not found" rule, the extractor retries up to 3 times

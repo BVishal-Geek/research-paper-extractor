@@ -88,6 +88,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "both normalize to canonical 'PMC12345' internally."
         ),
     )
+    parser.add_argument(
+        "--max-downloads",
+        default=None,
+        type=int,
+        metavar="N",
+        help=(
+            "Cap on how many papers to download in search-driven mode. "
+            "Overrides configs/pubmed.yaml's max_results for this run. "
+            "Ignored when --pmcids is given (list is used as-is)."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -98,6 +109,7 @@ def run_pipeline(  # pylint: disable=too-many-arguments,too-many-positional-argu
     skip_extract: bool = False,
     input_batch: str | None = None,
     pmcids: list[str] | None = None,
+    max_downloads: int | None = None,
 ) -> dict:
     """Run the three stages in order and return a per-stage summary dict.
 
@@ -109,6 +121,9 @@ def run_pipeline(  # pylint: disable=too-many-arguments,too-many-positional-argu
 
     `pmcids`, when provided, replaces the PubMed search step in the download
     stage — the Downloader will fetch exactly this list.
+
+    `max_downloads` is a search-mode cap that overrides pubmed.yaml's
+    max_results for this run. Ignored when `pmcids` is given.
     """
     summary: dict = {}
 
@@ -120,8 +135,10 @@ def run_pipeline(  # pylint: disable=too-many-arguments,too-many-positional-argu
                 f"STAGE 1/3 — Downloading {len(pmcids)} explicit PMCIDs (search skipped)"
             )
         else:
-            logger.info("STAGE 1/3 — Downloading XMLs from PubMed")
-        summary["download"] = Downloader().run(pmids=pmcids)
+            logger.info(
+                f"STAGE 1/3 — Downloading XMLs from PubMed (max_downloads={max_downloads})"
+            )
+        summary["download"] = Downloader().run(pmids=pmcids, max_results=max_downloads)
 
     if skip_preprocess:
         logger.info("Skipping preprocess stage")
@@ -160,6 +177,7 @@ def main(argv: list[str] | None = None) -> int:
         skip_extract=args.skip_extract,
         input_batch=args.processed_batch,
         pmcids=pmcids,
+        max_downloads=args.max_downloads,
     )
 
     logger.info("Pipeline complete")

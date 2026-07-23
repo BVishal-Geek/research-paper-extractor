@@ -79,19 +79,25 @@ class Downloader:
             logger.error(f"{pmid} download failed: {e}")
             return {"pmid": pmid, "status": "failed", "message": str(e)}
 
-    def run(self, query: str = None, pmids: list[str] | None = None) -> dict:
+    def run(
+        self,
+        query: str = None,
+        pmids: list[str] | None = None,
+        max_results: int | None = None,
+    ) -> dict:
         """Run the download pipeline.
 
         Two modes:
             - Explicit list: pass `pmids=[...]` to download exactly that set.
-              The PubMed search step is skipped and configs/pubmed.yaml's
-              `max_results` cap does not apply.
+              The PubMed search step is skipped and `max_results` is ignored.
             - Search-driven (default): the PubMed query from configs/pubmed.yaml
-              is used, capped by `max_results`.
+              is used. `max_results` overrides the config cap when provided.
 
         Args:
             query: Optional search query override (search-driven mode only).
             pmids: Optional explicit PMCID list. Takes precedence over query.
+            max_results: Optional cap that overrides pubmed.yaml for this run
+                (search-driven mode only).
 
         Returns:
             Summary dict with counts of success, skipped, and failed.
@@ -103,7 +109,7 @@ class Downloader:
                 f"Using {len(pmids)} explicit PMCIDs (search step skipped)"
             )
         else:
-            pmids = self.client.search(query)
+            pmids = self.client.search(query, max_results=max_results)
 
         if not pmids:
             logger.warning("No PMIDs to download.")
